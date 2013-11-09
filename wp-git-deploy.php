@@ -65,7 +65,7 @@ class WP_Git_Deploy {
 		add_action( 'init', array( $this, 'rewrite_rule' ) );
 		// add_action( 'admin_init', array( self::$instance, 'admin_init' ) );
 		add_action( 'admin_print_scripts-tools_page_git_deploy', array( $this, 'enqueue_scripts' ) );
-		add_action( 'parse_query', array( $this, 'deploy' ) );
+		add_action( 'parse_request', array( $this, 'deploy' ) );
 		add_action( 'admin_post_git_deploy_save', array( $this, 'save_options' ) );
 	}
 
@@ -97,15 +97,43 @@ class WP_Git_Deploy {
 			'repos'    => array()
 		) );
 
-		$this->options['auth_key'] = $options['auth_key'];
-		$this->options['ips']      = preg_split( "/\s+/", $options['ips'] );
-		$this->options['git']      = $options['git'];
-		$this->options['repos']    = array_values( $options['repos'] );
+		$repos = array();
+		foreach ( $options['repos'] as $repo ) {
+			$repos[] = array(
+				'name' => sanitize_text_field( $repo['name'] ),
+				'ref'  => sanitize_text_field( $repo['ref'] ),
+				'path' => sanitize_text_field( $repo['path'] )
+			);
+		}
+
+		$ips = array();
+		$options['ips'] = preg_split( "/\s+/", $options['ips'] );
+		foreach ( $options['ips'] as $ip ) {
+			$ips[] = preg_replace( '/[^\d\.]/', '', $ip );
+		}
+
+		$this->options['auth_key'] = sanitize_text_field( $options['auth_key'] );
+		$this->options['git']      = sanitize_text_field( $options['git'] );
+		$this->options['repos']    = $repos;
+		$this->options['ips']      = $ips;
 
 		update_option( self::SLUG, $this->options );
 
 		wp_redirect( admin_url( 'tools.php?page=git_deploy&save=1' ) );
 		exit;
+	}
+
+	/**
+	 * Add a repository to the array. This method exists to serve as a mini API so
+	 * other plugins can add repositories
+	 *
+	 * @param array $repo
+	 * @return void
+	 */
+	public function add_repo( $repo = array() ) {
+		$this->load_options();
+		$this->options['repos'][] = $repo;
+		update_option( self::SLUG, $this->options );
 	}
 
 	public function rewrite_rule() {
@@ -129,8 +157,8 @@ class WP_Git_Deploy {
 		}
 	}
 
-	public function deploy() {
-		if ( '' != get_query_var( 'git-deploy' ) ) {
+	public function deploy( $wp ) {
+		if ( ! empty( $wp->query_vars['git-deploy'] ) ) {
 			$this->load_options();
 			$auth = get_query_var( 'git-auth' );
 
@@ -147,24 +175,54 @@ class WP_Git_Deploy {
 
 			foreach ( $this->options['repos'] as $repo ) {
 				if ( $repo['name'] == $payload->repository->name && preg_match( "#{$repo['ref']}#i", $payload->ref ) ) {
-					$path = $repo['path'];
+					$this->pull( $repo['path'] );
 					break;
 				}
 			}
-			if ( ! empty( $path ) && file_exists( $path ) ) {
-				chdir( $path );
-				$command = "{$this->options['git']} pull";
-				$output = array( "{$path}> {$command}" );
-				# If we have a commit to one of our branches, we can pull on it
-				exec( "$command 2>&1", $output );
-				// fwrite( $handle, "Commit to {$payload->repository->name}:{$payload->ref}, executing:". implode( "\n", $output ) . "\n" );
-				echo "Commit to {$payload->repository->name}:{$payload->ref}, executing:". implode( "\n", $output ) . "\n";
-			} else {
-				// fwrite( $handle, "Commit to {$payload->repository->name}:{$payload->ref}, but no matching path found!\n" );
-				echo "Commit to {$payload->repository->name}:{$payload->ref}, but no matching path found!\n";
-			}
 
 			exit;
+		}
+	}
+
+	public function pull( $path ) {
+		$this->load_options();
+		if ( ! empty( $path ) && file_exists( $path ) ) {
+			chdir( ABSPATH . $path );
+			$command = "{$this->options['git']} pull";
+			$output = array( "{$path}> {$command}" );
+			# If we have a commit to one of our branches, we can pull on it
+			exec( "$command 2>&1", $output );
+			// fwrite( $handle, "Commit to {$payload->repository->name}:{$payload->ref}, executing:". implode( "\n", $output ) . "\n" );
+			// echo "Commit to {$payload->repository->name}:{$payload->ref}, executing:". implode( "\n", $output ) . "\n";
+			error_log( "Commit to {$payload->repository->name}:{$payload->ref}, executing:". implode( "\n", $output ) );
+		} else {
+			// fwrite( $handle, "Commit to {$payload->repository->name}:{$payload->ref}, but no matching path found!\n" );
+			// echo "Commit to {$payload->repository->name}:{$payload->ref}, but no matching path found!\n";
+			error_log( "Commit to {$payload->repository->name}:{$payload->ref}, but no matching path found!" );
+		}
+	}
+
+	public function git_clone( $path, $repo ) {
+		$this->load_options();
+		if ( ! empty( $path ) && ! file_exists( $path ) && preg_match( '#^(.*/)([^/]+)/?$#i', $path, $matches ) ) {
+			$parent = $matches[1];
+
+			if ( ! file_exists( $parent ) )
+				@mkdir( $parent );
+
+			if ( chdir( ABSPATH . $parent ) ) {
+				$command = "{$this->options['git']} clone --recursive {$repo} {$matches[2]}";
+				$output = array( "{$parent}> {$command}" );
+				# If we have a commit to one of our branches, we can pull on it
+				exec( "$command 2>&1", $output );
+				// fwrite( $handle, "Cloning new repo; executing:". implode( "\n", $output ) . "\n" );
+				// echo "Cloning new repo; executing:". implode( "\n", $output ) . "\n";
+				error_log( "Cloning new repo; executing:" . implode( "\n", $output ) );
+			}
+		} else {
+			// fwrite( $handle, "Cloning new repo; but no matching path found!\n" );
+			// echo "Cloning new repo; but no matching path found!\n";
+			error_log( "Cloning new repo; but no matching path found!" );
 		}
 	}
 
