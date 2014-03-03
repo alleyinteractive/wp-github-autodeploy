@@ -57,6 +57,12 @@ class WP_Git_Deploy {
 	public function load_options() {
 		if ( ! $this->options ) {
 			$this->options = (array) get_option( self::SLUG );
+			$this->options = wp_parse_args( $this->options, array(
+				'auth_key' => '',
+				'ips'      => array(),
+				'git'      => 'git',
+				'repos'    => array()
+			) );
 		}
 	}
 
@@ -65,7 +71,7 @@ class WP_Git_Deploy {
 		add_action( 'init', array( $this, 'rewrite_rule' ) );
 		// add_action( 'admin_init', array( self::$instance, 'admin_init' ) );
 		add_action( 'admin_print_scripts-tools_page_git_deploy', array( $this, 'enqueue_scripts' ) );
-		add_action( 'parse_request', array( $this, 'deploy' ) );
+		add_action( 'parse_query', array( $this, 'deploy' ) );
 		add_action( 'admin_post_git_deploy_save', array( $this, 'save_options' ) );
 	}
 
@@ -109,7 +115,10 @@ class WP_Git_Deploy {
 		$ips = array();
 		$options['ips'] = preg_split( "/\s+/", $options['ips'] );
 		foreach ( $options['ips'] as $ip ) {
-			$ips[] = preg_replace( '/[^\d\.]/', '', $ip );
+			$ip = preg_replace( '/[^\d\.]/', '', $ip );
+			if ( preg_match( '/^(\d{1,3}\.){3}\d{1,3}$/' ) ) {
+				$ips[] = $ip;
+			}
 		}
 
 		$this->options['auth_key'] = sanitize_text_field( $options['auth_key'] );
@@ -143,18 +152,22 @@ class WP_Git_Deploy {
 	}
 
 	public function activate() {
-		flush_rewrite_rules();
+		delete_option( 'rewrite_rules' );
 		if ( false === get_option( self::SLUG ) ) {
 			$git = `which git`;
 			if ( ! strpos( $git, '/git' ) )
 				$git = 'git';
-			update_site_option( self::SLUG, array(
-				'auth_key' => wp_generate_password( 12, false ),
+			add_option( self::SLUG, array(
+				'auth_key' => strtolower( wp_generate_password( 12, false ) ),
 				'repos'    => array(),
 				'ips'      => array(),
 				'git'      => $git
-			) );
+			), '', 'no' );
 		}
+	}
+
+	public function deactivate() {
+		delete_option( 'rewrite_rules' );
 	}
 
 	public function deploy( $wp ) {
@@ -230,8 +243,7 @@ class WP_Git_Deploy {
 		if ( empty( $this->options['ips'] ) )
 			return true;
 
-		$whitelist = preg_split( "/\s+/", $this->options['ips'] );
-		return empty( $whitelist ) || in_array( $_SERVER['REMOTE_ADDR'], $whitelist );
+		return in_array( $_SERVER['REMOTE_ADDR'], $this->options['ips'] );
 	}
 }
 
@@ -242,6 +254,6 @@ add_action( 'after_setup_theme', 'WP_Git_Deploy' );
 
 # Plugin activation and deactivation stuff
 register_activation_hook( __FILE__, array( WP_Git_Deploy(), 'activate' ) );
-register_deactivation_hook( __FILE__, 'flush_rewrite_rules' );
+register_deactivation_hook( __FILE__, array( WP_Git_Deploy(), 'deactivate' ) );
 
 endif;

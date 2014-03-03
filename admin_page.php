@@ -90,14 +90,17 @@ jQuery(function($){
 								<p>
 									<label for="git_repo_name_<%= i %>"><?php _e( 'Repository Name', 'wp-git-deploy' ); ?></label>
 									<input name="git_deploy[repos][<%= i %>][name]" id="git_repo_name_<%= i %>" class="regular-text ltr" value="<%= name %>" />
+									<p class="description"><?php _e( 'e.g. for https://github.com/alleyinteractive/wp-git-deploy, this would be wp-git-deploy', 'wp-git-deploy' ); ?></p>
 								</p>
 								<p>
 									<label for="git_repo_ref_<%= i %>"><?php _e( 'Deploy Ref Regex', 'wp-git-deploy' ); ?></label>
 									<input name="git_deploy[repos][<%= i %>][ref]" id="git_repo_ref_<%= i %>" class="regular-text ltr" value="<%= ref %>" /><br />
+									<p class="description"><?php _e( 'e.g. ^refs/heads/master$', 'wp-git-deploy' ); ?></p>
 								</p>
 								<p>
-									<label for="git_repo_path_<%= i %>"><?php _e( 'Local Path<br />(relative to WordPress root)', 'wp-git-deploy' ); ?></label>
+									<label for="git_repo_path_<%= i %>"><?php _e( 'Local Path', 'wp-git-deploy' ); ?></label>
 									<input name="git_deploy[repos][<%= i %>][path]" id="git_repo_path_<%= i %>" class="regular-text ltr" value="<%= path %>" /><br />
+									<p class="description"><?php _e( 'Relative to WordPress root', 'wp-git-deploy' ); ?></p>
 								</p>
 								<p><a href="#" class="git-deploy-remove-repo"><?php _e( 'remove', 'wp-git-deploy' ) ?></a></p>
 							</li>
